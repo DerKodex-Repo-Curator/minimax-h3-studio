@@ -52,7 +52,7 @@ outputs/<title>/
   previews/                 optional assembly checks
   <title>.clean.mp4         final picture/audio edit before subtitle muxing
   <title>.mp4               delivered film with two embedded subtitle tracks
-  cover.png
+  cover.png                 title poster; first frame of clips/S00_opening.mp4
   publish.md
 ```
 
@@ -366,9 +366,59 @@ is structural; changing a seed alone may not fix it. Keep rejected takes and log
 Do not cancel a healthy running GPU job just to speed iteration. Fix a recurring issue in the bible/builder
 before generating more affected shots. Preserve acceptable minor variations rather than chasing endless takes.
 
-## 9. Assemble the entire film
+## 9. Make the title cover and animated opening
 
-Assemble all accepted segments in story order into `<title>.clean.mp4`, at 24 fps. Normalize frame timestamps
+Every film opens with a 3–5 second animated title shot, like the opening card of a feature film. Make it after
+the references and the style are frozen, and before assembly.
+
+**Cover picture.** Write `prompts/images/cover.txt` and generate `cover.png` with Studio's picture API
+(`image_model=qwen-image-21-turbo`). Use edit mode with the frozen references as repeatable `ref_image` inputs
+so the principal character(s), costume, set and style match the film; put the location (or another image with
+the film's aspect ratio) first, because Qwen edits follow the first input's canvas (`aspect_ratio=image`).
+Design it as a poster that stops the scroll:
+
+- one strong, simple composition: the protagonist in a characteristic pose in the key location, with a clear
+  focal point and room for the title (rule of thirds, not a centered passport photo);
+- strong light and color dramaturgy, for example a single warm pool of light against a cold surrounding;
+- the film title as large, legible lettering in a style that suits the story (brush calligraphy, storybook
+  type, bold poster lettering); spell out the exact title in quotes and say nothing else should be written;
+- a hint of the story's question or tension, without spoiling the ending.
+
+Check the title spelling, the faces against the references and that no other text or logo appeared. Generate
+a few candidates if needed, keep the rejected ones in `refs/candidates/` and record the prompt and job in
+`jobs.json`. The same `cover.png` is the publishing thumbnail/poster.
+
+**Animated opening.** Animate the cover in first-frame mode as `prompts/video/S00_opening.txt`, saved as
+`clips/S00_opening.mp4`:
+
+```bash
+curl -fsS -X POST "$STUDIO_URL/api/jobs" \
+  -F 'prompt=<prompts/video/S00_opening.txt' \
+  -F resolution=768p -F lora=<fl2va choice of the film's model family> -F aspect_ratio=image -F duration=5 \
+  -F image=@cover.png
+```
+
+Use the first-frame (fl2va) choice of the same model family as the film so the look matches, for example
+`pika-flex-fl2va-sparse-all` for a Pika H3 Flex film, `fasth3-v2` for a FastH3 film. `duration` is 3–5 seconds;
+the frame count snaps to the 17k+5 grid as usual. The prompt starts from `<Picture 1>` (the server adds the
+keyframe tag if it is missing), describes the cover in one sentence and then one continuous shot with no cut:
+
+- a very slow, smooth push-in of a few percent;
+- gentle ambient motion that belongs to the picture (steam, mist, leaves, light flicker, hair or fabric in the
+  wind) and at most one small character gesture such as lifting the eyes;
+- the title lettering stays perfectly still, sharp and legible for the whole shot, never morphing or moving
+  with the scene, and no other text appears;
+- `overall_soundscape`: one opening hit (bell, gong, chord or a sound from the story's world) over quiet
+  ambience, no speech; `non_diegetic_music`: a short opening sting in the film's musical idiom.
+
+Review it like any segment, with extra attention to the title: redo once with less motion if the lettering
+warps, flickers or gains extra characters. Check its loudness against the first story segment and raise the
+opening's audio during assembly if it is noticeably quieter.
+
+## 10. Assemble the entire film
+
+Assemble `clips/S00_opening.mp4` followed by all accepted segments in story order into
+`<title>.clean.mp4`, at 24 fps. Normalize frame timestamps
 with `setpts=N/24/TB`, set square pixels, and pad/trim each segment's audio to its **video frame duration**
 before concat. Re-encode picture/audio for this assembly; concat demuxer plus stream-copy previously retained
 AAC priming and caused sync errors. Avoid per-shot loudness normalization, which can lift quiet noise floors.
@@ -391,7 +441,7 @@ Verify with ffprobe: 24/1 frame rate, final frame count equals the accepted segm
 resolution/orientation, and matching audio/video duration within codec/container rounding. Watch the joins
 for rhythm and continuity. Finish the edit **before** transcription so subtitle timestamps follow the deliverable.
 
-## 10. Transcribe the assembled film with Qwen3-ASR
+## 11. Transcribe the assembled film with Qwen3-ASR
 
 Use the Studio **transcription API with `qwen3_asr`**, not faster-whisper, external TTS or a script-derived
 subtitle track. Submit the completed film (or losslessly extracted audio from that exact edit) through the
@@ -416,7 +466,7 @@ If the whole-film result has local alignment problems, re-transcribe the affecte
 apply its exact offset rather than reverting to approximate script timing. If timed exports are missing,
 investigate the ASR/alignment failure before delivering subtitles.
 
-## 11. Review, correct and translate subtitles
+## 12. Review, correct and translate subtitles
 
 The agent reviews the transcript itself against the final clip sequence, dialogue/narration script, names,
 context and available audio evidence. Fix unreasonable recognition errors, punctuation, homophones,
@@ -436,7 +486,7 @@ unreviewed ASR or ask ASR to invent a translation. Save `subs/translation.<langu
 and times; adapt wording and line breaks for readability without changing meaning. Review both tracks for
 omissions, hallucinations, name consistency, punctuation and the chosen target language.
 
-## 12. Embed two selectable subtitle tracks and deliver
+## 13. Embed two selectable subtitle tracks and deliver
 
 Embed the source and translation as **two separate soft subtitle streams**, never burn text into pixels.
 Standard players usually display one selected stream at a time; two embedded tracks do not imply simultaneous
@@ -461,9 +511,8 @@ and duration, and no subtitle extending past the edit. Check switching and hidin
 and inspect several cues near the beginning, middle, end and cuts for sync. Keep both SRTs for platforms
 that accept sidecar subtitles. Subtitle muxing must not re-encode the final picture/audio.
 
-Generate a poster cover with the current image models, matching the fixed character/set/style references
-where supported. A cover may contain the title even though the video picture has no burned-in text.
-Check title spelling. Write `publish.md` with title, concise description, AI-generation disclosure,
+Use `cover.png` from section 9 as the poster/thumbnail; it is the one image allowed to carry the title, since
+story shots have no burned-in text. Write `publish.md` with title, concise description, AI-generation disclosure,
 8–12 appropriate hashtags, runtime, resolution and subtitle languages.
 
 Deliver the film path, cover, publish notes and both SRTs, plus a brief account of actual QC and any unresolved
