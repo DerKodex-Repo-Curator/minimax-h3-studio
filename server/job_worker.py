@@ -281,20 +281,22 @@ class Worker(threading.Thread):
                     or not (self.settings.videos / source["video"]).is_file()
                 ):
                     raise ValueError("the source video has been deleted")
-                upscale = (
-                    self.engine.flashvsr_video
-                    if job["upscaler"] == "flashvsr"
-                    else self.engine.upscale_video
-                )
-                result = upscale(
+                paths = dict(
                     source_path=self.settings.videos / source["video"],
-                    width=job["width"],
-                    height=job["height"],
                     seed=job["seed"],
                     video_path=self.settings.videos / video,
                     thumb_path=self.settings.thumbs / thumb,
                     on_progress=on_progress,
                 )
+                if job["upscaler"] == "relayvsr":
+                    result = self.engine.relayvsr_video(target=job["preset"], **paths)
+                else:
+                    upscale = (
+                        self.engine.flashvsr_video
+                        if job["upscaler"] == "flashvsr"
+                        else self.engine.upscale_video
+                    )
+                    result = upscale(width=job["width"], height=job["height"], **paths)
                 self.store.update(
                     job_id,
                     status="done",

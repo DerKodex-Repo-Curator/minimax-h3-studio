@@ -40,6 +40,7 @@ class WorkerTests(APIAppTestCase):
             "generate_3d",
             "upscale_video",
             "flashvsr_video",
+            "relayvsr_video",
         )
         engine = SimpleNamespace(
             **{method: Mock(return_value={"test": method}) for method in methods}
@@ -79,6 +80,13 @@ class WorkerTests(APIAppTestCase):
                 "video",
                 self.settings.videos,
                 {"source": source["id"], "upscaler": "flashvsr"},
+            ),
+            (
+                "upscale",
+                "relayvsr_video",
+                "video",
+                self.settings.videos,
+                {"source": source["id"], "upscaler": "relayvsr", "preset": "2x"},
             ),
         ):
             job = self.store.create(

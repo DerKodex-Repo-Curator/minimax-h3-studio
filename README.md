@@ -8,7 +8,7 @@ A self-hosted web studio for [MiniMax-H3](https://huggingface.co/Comfy-Org/MiniM
 - **Image to 3D** with [Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D): a single image becomes a textured GLB, with interactive rotation/zoom and download.
 - **Speech and transcription** through native [audio.cpp](https://github.com/0xShug0/audio.cpp) CUDA server: Qwen3-TTS, VoxCPM2 and OmniVoice for generation/cloning/design; Qwen3-ASR for uploaded audio/video transcription and supported subtitle exports.
 - **Music generation** with [MiniMax Music 3](https://huggingface.co/Comfy-Org/MiniMax-Music-3): songs up to 5 minutes from a caption and lyrics.
-- **Upscaling** finished videos to 1080p or 1440p with [FlashVSR v1.1](https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1) (fast) or [SeedVR2](https://huggingface.co/Comfy-Org/SeedVR2), keeping their sound.
+- **Upscaling** finished videos 2× or 4× with [RelayVSR](https://huggingface.co/Comfy-Org/RelayVSR) (fastest), or to 1080p or 1440p with [FlashVSR v1.1](https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1) or [SeedVR2](https://huggingface.co/Comfy-Org/SeedVR2), keeping their sound.
 - **Guide audio** for video jobs: anchor a slice of a song or recording as the shot's soundtrack, so singing, speech and motion follow it (music videos, lip sync).
 - FastVideo's distilled [FastH3](https://huggingface.co/FastVideo/FastVideo-FastH3-Comfy) 8-step checkpoints as a second model group that runs without a LoRA.
 - Weights stay loaded between jobs; jobs run one at a time from a persistent queue.
@@ -24,7 +24,7 @@ On an RTX 4090 a 5-second clip with sound takes about 30–45 s at 544p and 65�
 **GPU machine** (where generation runs)
 
 - Linux with an NVIDIA GPU. Developed on an RTX 4090 24 GB with 125 GB RAM; checkpoints are memory-mapped, so plenty of system RAM (64 GB+) and a fast SSD help.
-- A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) checkout with MiniMax-H3 support (developed against v0.42) and its Python environment (conda or venv). **You install ComfyUI yourself**; this project only imports it.
+- A [ComfyUI](https://github.com/comfyanonymous/ComfyUI) checkout at commit `2f894332` or newer (v0.44.0 plus 14 commits, the first with RelayVSR; developed against that commit) and its Python environment (conda or venv). **You install ComfyUI yourself**; this project only imports it. After `git pull`, install the versions its `requirements.txt` pins: this commit needs `comfy-aimdo==0.6.0` and `comfy-kitchen==0.2.41`, whose `window_attention` RelayVSR calls (on PyTorch older than cu130, rebuild comfy_kitchen as described below).
 - systemd, and `sudo` without a password prompt for the deploy user (the deploy script installs and restarts a systemd unit over non-interactive SSH).
 - `python3`, `curl` and `rsync`.
 - Optional, about 2× faster: `triton` and `sageattention` in the ComfyUI environment (enabled through `H3_COMFY_ARGS`).
@@ -37,13 +37,13 @@ On an RTX 4090 a 5-second clip with sound takes about 30–45 s at 544p and 65�
 
 ComfyUI runs the int8 checkpoints' matmuls and the block-sparse attention of FastH3 (VSA) and of the sparse choices (Sol-Attn) through [comfy_kitchen](https://pypi.org/project/comfy-kitchen/), which has `cuda`, `triton` and `eager` (plain PyTorch) backends. Two things keep the fast backends off on a cu128 setup like the reference machine (torch 2.11.0+cu128, driver 570):
 
-1. The published comfy_kitchen CUDA wheels need the CUDA 13 runtime and an NVIDIA driver r580 or newer, so their CUDA ops do not load on a cu128 setup with driver 570. Rebuild it from source against the CUDA toolkit that matches your torch (source builds support CUDA 12.8 and newer), for your GPU's architecture, and install that wheel into the ComfyUI environment. This is how the reference machine's comfy_kitchen 0.2.39 was built:
+1. The published comfy_kitchen CUDA wheels need the CUDA 13 runtime and an NVIDIA driver r580 or newer, so their CUDA ops do not load on a cu128 setup with driver 570. Rebuild it from source against the CUDA toolkit that matches your torch (source builds support CUDA 12.8 and newer), for your GPU's architecture, and install that wheel into the ComfyUI environment. This is how the reference machine's comfy_kitchen 0.2.41 was built:
 
    - Prerequisites: the CUDA toolkit matching torch's CUDA (`python -c "import torch; print(torch.version.cuda)"`; here `/usr/local/cuda-12.8` with `nvcc`), CMake 3.26+ and nanobind 2+ (pip fetches both into the build environment), and your GPU's compute capability without the dot (`nvidia-smi --query-gpu=compute_cap --format=csv`: `8.9` → `89` for RTX 40, `86` for RTX 30, `120` for RTX 50). Building only for your own architecture is much faster than the default list.
    - Get the source from [Comfy-Org/comfy-kitchen](https://github.com/Comfy-Org/comfy-kitchen) at the tag of the version ComfyUI installed (`pip show comfy-kitchen`). It vendors CUTLASS and flash-attention as git submodules, so clone recursively:
 
      ```bash
-     git clone --branch v0.2.39 --recurse-submodules https://github.com/Comfy-Org/comfy-kitchen ~/build/comfy-kitchen-0.2.39
+     git clone --branch v0.2.41 --recurse-submodules https://github.com/Comfy-Org/comfy-kitchen ~/build/comfy-kitchen-0.2.41
      ```
 
      Keep a copy of the installed package first so you can roll back: `cp -r <site-packages>/comfy_kitchen ~/build/backup_kitchen_cu13`.
@@ -51,7 +51,7 @@ ComfyUI runs the int8 checkpoints' matmuls and the block-sparse attention of Fas
 
      ```bash
      conda activate comfyui            # or the ComfyUI venv
-     cd ~/build/comfy-kitchen-0.2.39
+     cd ~/build/comfy-kitchen-0.2.41
      export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
      export COMFY_CUDA_ARCHS=89        # your compute capability; setup.py reads it (its README's
                                        # equivalent is `python setup.py build_ext --cuda-archs="89" bdist_wheel`)
@@ -62,7 +62,7 @@ ComfyUI runs the int8 checkpoints' matmuls and the block-sparse attention of Fas
    - Install it over the published wheel and check that the CUDA backend loads:
 
      ```bash
-     pip install --force-reinstall --no-deps ~/build/dist/comfy_kitchen-0.2.39-*.whl
+     pip install --force-reinstall --no-deps ~/build/dist/comfy_kitchen-0.2.41-*.whl
      python -c "import comfy_kitchen as ck; print(ck.list_backends()['cuda']['available'])"   # True
      ```
 
@@ -159,7 +159,7 @@ python3 scripts/prepare_models.py --list                    # show files and sou
 python3 scripts/prepare_models.py --comfyui ... --skip ref2va fasth3
 ```
 
-Groups for `--skip` / `--only`: `shared`, `fl2va`, `ref2va`, `larryvrh`, `pika`, `fasth3`, `image`, `klein`, `qwen-image`, `audio`, `audio-runtime`, `qwen3_tts`, `voxcpm2`, `omnivoice`, `qwen3_asr`, `music`, `upscale`, `flashvsr`, `pixal3d`. `image` includes all three picture models; `klein` and `qwen-image` select only the new models. With `./deploy.sh models`, extra arguments are passed through (`./deploy.sh models --skip ref2va`).
+Groups for `--skip` / `--only`: `shared`, `fl2va`, `ref2va`, `larryvrh`, `pika`, `fasth3`, `image`, `klein`, `qwen-image`, `audio`, `audio-runtime`, `qwen3_tts`, `voxcpm2`, `omnivoice`, `qwen3_asr`, `music`, `upscale`, `flashvsr`, `relayvsr`, `pixal3d`. `image` includes all three picture models; `klein` and `qwen-image` select only the new models. With `./deploy.sh models`, extra arguments are passed through (`./deploy.sh models --skip ref2va`).
 
 | File | Folder | Source | Size |
 |---|---|---|---|
@@ -186,6 +186,8 @@ Groups for `--skip` / `--only`: `shared`, `fl2va`, `ref2va`, `larryvrh`, `pika`,
 | `seedvr2_3b_int8_convrot` (upscaling) | `diffusion_models` | Comfy-Org/SeedVR2 | 3.2 GB |
 | `seedvr2_ema_vae_fp16` (upscaling VAE) | `vae` | Comfy-Org/SeedVR2 | 0.48 GB |
 | `v1/dit_int8_convrot`, `v1/LQ_proj_in.ckpt`, `TCDecoder.ckpt` (FlashVSR v1.1) | `flashvsr_plus` | t8star/Flashvsr-Plus-Comfy | 2.2 GB |
+| `relayvsr_x2_lightx2v_int8_convrot`, `relayvsr_x4_int8_convrot` (RelayVSR) | `diffusion_models` | Comfy-Org/RelayVSR | 4.8 GB each |
+| `relayvsr_flash_vae_x2_fp32`, `relayvsr_flash_vae_x4_fp32` (RelayVSR decoders) | `vae` | Comfy-Org/RelayVSR | 0.12 GB each |
 | `pixal3d_int8_convrot` (image to 3D) | `diffusion_models` | Comfy-Org/Pixal3D | 5.2 GB |
 | `dino_v3_L_naf_fp32` (3D image encoder) | `clip_vision` | Comfy-Org/Pixal3D | 1.1 GB |
 | `trellis_2_shape_vae_bf16` (3D shape VAE) | `vae` | Comfy-Org/Pixal3D | 1.0 GB |
@@ -369,11 +371,12 @@ API: `POST /api/jobs` with multipart `kind=3d`, required `image`, optional `seed
 
 ![Pixal3D image-to-3D mode](doc/screenshots/3d.webp)
 
+
 ### Backend structure
 
 `server/app.py` only assembles the aiohttp application and starts the service. `server_settings.py` reads environment variables and owns the data paths; each application receives its own settings instead of mutating module globals. HTTP handlers are grouped under `http_api/`, multipart form builders under `job_forms/`, file validation/storage in `job_uploads.py`, job serialization in `job_views.py`, and the FIFO worker in `job_worker.py`. SQLite persistence remains in `h3_jobs.py`.
 
-`model_catalog.py` is the standard-library-only video/shared registry; `image_models.py` separately owns picture model choices, capabilities, defaults and checksum-pinned downloads. The model downloader imports it directly. `h3_engine.py` owns ComfyUI bootstrap, model caches, VRAM lifecycle and cancellation; the individual video, picture, music, SeedVR2, FlashVSR and Pixal3D implementations live in `pipelines/`, alongside shared media helpers. GPU libraries are imported when a pipeline runs, after ComfyUI bootstrap. Add new model choices in the catalog, and new task-family pipelines separately from HTTP handling.
+`model_catalog.py` is the standard-library-only video/shared registry; `image_models.py` separately owns picture model choices, capabilities, defaults and checksum-pinned downloads. The model downloader imports it directly. `h3_engine.py` owns ComfyUI bootstrap, model caches, VRAM lifecycle and cancellation; the individual video, picture, music, SeedVR2, FlashVSR, RelayVSR and Pixal3D implementations live in `pipelines/`, alongside shared media helpers. GPU libraries are imported when a pipeline runs, after ComfyUI bootstrap. Add new model choices in the catalog, and new task-family pipelines separately from HTTP handling.
 
 Run backend regression tests with the project's configured Python interpreter: `python -m unittest discover -s tests -v`. The tests use the real application factory with isolated settings and a stub engine, covering submission validation, task-family history, cancellation/deletion/upscaling, and dispatch to every pipeline.
 
@@ -383,8 +386,9 @@ The history panel follows the selected task type: Videos (including upscales), P
 
 The left navigation is defined in `web/src/generationModes.js`, grouped by video, image, audio and 3D. `GenerateForm.vue` only routes to a family form and handles reuse; `KeepAlive` preserves inputs while switching families. `forms/VideoForm.vue`, `PictureForm.vue`, `MusicForm.vue` and `MeshForm.vue` own their settings. Video prompt fields and model settings are separate components, prompt assembly/parsing is in `useVideoPrompt.js`, and shared submission, drafts and seed controls live in `useGeneration.js` / `FormFooter.vue`. The desktop settings panel has a dedicated scroll region, resets to the top when the mode changes, and uses page scrolling on small screens. Result-card actions occupy a single horizontal scroll strip (touchpad/swipe, mouse wheel or arrow keys), and upscale options render outside the strip to avoid clipping. Each family saves its draft separately and migrates the old combined draft. To add a family, add its form component and registry entry.
 
-**Upscaling**: a finished video's **Upscale** button opens a menu of upscalers and the targets above the video's size (short side 1080 or 1440 px) and queues a new job; the audio and frame rate are copied from the source. H3 already produces 768p natively; upscaling adds sharpness, it does not add content.
+**Upscaling**: a finished video's **Upscale** button opens a menu of upscalers and their targets (RelayVSR's factors, or a short side of 1080 or 1440 px above the video's) and queues a new job; the audio and frame rate are copied from the source. H3 already produces 768p natively; upscaling adds sharpness, it does not add content.
 
+- **RelayVSR** (int8) with the settings of the workflow attached to [ComfyUI PR #17511](https://github.com/Comfy-Org/ComfyUI/pull/17511): one euler step on every 15th frame, then its Flash decoder restores all frames from those latents and the source frames. The source goes in at its native size, so the choices are **2×** (LightX2V's model, trained for this and recommended for H3 clips) and **4×**, not a target resolution; the API refuses an output short side above 2176 px (4× of 544p), because decoded frames wait in system RAM for the encoder. On the 4090, 15 s clips took 45 s (768p 2×, 2688×1536), 27 s (544p 2×) and 89 s (544p 4×, 3840×2176; 54 GB of system RAM in use at the peak). About half of each run is encoding the large mp4. On the same 5 s 544p clip, RelayVSR 2× took 9 s, against 43 s for FlashVSR and 116 s for SeedVR2 to 1080p, each including its first model load except RelayVSR.
 - **FlashVSR v1.1** (int8 DiT, Tiny decoder, Triton block-sparse attention) through T8star's FlashVSR+ node, which streams the clip in chunks. A 10.8 s 768p clip to 1080p took 87 s on the 4090, including the first model load. Its detail is the sharpest, but texture can shimmer on camera moves.
 - **SeedVR2 3B** (int8) with the settings of ComfyUI's SeedVR2 video upscale template: a lanczos resize to the target, one euler step, no color correction. The same clip took 272 s, almost all of it in SeedVR2's own VAE (69 s encode, 161 s decode, 19 s sampling). The clip is sampled in temporal chunks sized to the free VRAM, two latent frames overlapping and crossfaded, where the template samples it whole, and the VAE runs whole frames instead of the template's 512 px tiles, which nearly doubled its work (the same clip took 510 s with them).
 
@@ -420,7 +424,7 @@ See **[the complete API guide](doc/api.md)** for every model's parameters and cu
 | POST | `/api/jobs` | create a job (multipart form, below) |
 | GET | `/api/jobs/{id}` | one job |
 | POST | `/api/jobs/{id}/cancel` | cancel a queued or running job |
-| POST | `/api/jobs/{id}/upscale` | queue an upscale of a finished video (form fields `upscaler`: `flashvsr` / `seedvr2`, default `seedvr2`; `target`: `1080p` / `1440p`; optional `seed`) |
+| POST | `/api/jobs/{id}/upscale` | queue an upscale of a finished video (form fields `upscaler`: `relayvsr` / `flashvsr` / `seedvr2`, default `seedvr2`; `target`: `2x` / `4x` for RelayVSR, `1080p` / `1440p` otherwise; optional `seed`) |
 | DELETE | `/api/jobs/{id}` | delete a finished job and its files |
 | POST | `/api/unload` | free the GPU for another program while nothing is running or queued (409 otherwise); returns `vram_free_mb` / `vram_total_mb`, and the next job reloads its models |
 

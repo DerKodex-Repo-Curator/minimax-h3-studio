@@ -249,10 +249,43 @@ FLASHVSR = {
     "attention": "auto",
     "decoder": "tiny",
 }
+# RelayVSR with the settings of the workflow attached to ComfyUI's PR #17511: the source goes in at its native
+# size and the checkpoint decides the factor. One euler step on every 15th frame, then the Flash decoder restores
+# all frames from those latents and the source frames. Needs comfy_kitchen's window_attention (0.2.41+).
+# Natively sized output has no room for a target resolution, so its targets are the factors.
+RELAYVSR_REPO = "Comfy-Org/RelayVSR"
+RELAYVSR_MODELS = {
+    "2x": {
+        "factor": 2,
+        "unet": "relayvsr_x2_lightx2v_int8_convrot.safetensors",
+        "vae": "relayvsr_flash_vae_x2_fp32.safetensors",
+    },
+    "4x": {
+        "factor": 4,
+        "unet": "relayvsr_x4_int8_convrot.safetensors",
+        "vae": "relayvsr_flash_vae_x4_fp32.safetensors",
+    },
+}
+RELAYVSR_CHECKSUMS = {
+    "relayvsr_x2_lightx2v_int8_convrot.safetensors": "240e75e0c17cf2845d559b25254a230ff7458f81449d7a8c5e7e3fb8275c7b3c",
+    "relayvsr_flash_vae_x2_fp32.safetensors": "b5bb0339acb5b52545911ea29a51b4c5b805776a779222b5a14591571f42e21c",
+    "relayvsr_x4_int8_convrot.safetensors": "21303b3c5f9ab4e1fd3fe00df5dd2e0b343f0cf2e3d269e03a9872000a313a2e",
+    "relayvsr_flash_vae_x4_fp32.safetensors": "7b8b8c99275fd5c4501b0589cc7b4c4506456a5df83160ef4e207e147b30f714",
+}
+RELAYVSR = {
+    "steps": 1,
+    "cfg": 1.0,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "detail": 1.0,
+}
+# Largest output short side: 4x of 544p. Decoded frames sit in system RAM until they are encoded.
+RELAYVSR_MAX_SHORT_SIDE = 2176
 # Upscalers a finished video can go through.
 UPSCALERS = {
     "seedvr2": {"label": "SeedVR2 3B"},
     "flashvsr": {"label": "FlashVSR v1.1"},
+    "relayvsr": {"label": "RelayVSR"},
 }
 # Target short side of each upscale choice.
 UPSCALE_TARGETS = {"1080p": 1080, "1440p": 1440}
@@ -334,8 +367,23 @@ def music_model_info():
     }
 
 
-def upscale_model_info(upscaler="seedvr2"):
+def upscale_targets(upscaler):
+    """The targets an upscaler offers: fixed short sides, or RelayVSR's native factors."""
+    return list(RELAYVSR_MODELS if upscaler == "relayvsr" else UPSCALE_TARGETS)
+
+
+def upscale_model_info(upscaler="seedvr2", target=None):
     """What an upscale job runs on, as shown to users."""
+    if upscaler == "relayvsr":
+        files = RELAYVSR_MODELS.get(target, RELAYVSR_MODELS["2x"])
+        return {
+            "unet": files["unet"],
+            "lora": None,
+            "lora_strength": None,
+            "steps": RELAYVSR["steps"],
+            "sampler": RELAYVSR["sampler"],
+            "vae": files["vae"],
+        }
     if upscaler == "flashvsr":
         return {
             "unet": "flashvsr_v1.1_dit_int8_convrot",
@@ -356,7 +404,10 @@ def upscale_model_info(upscaler="seedvr2"):
 
 
 def upscale_size(width, height, target):
-    """Width/height of a `width`×`height` video scaled so its short side is the target's, both even (H.264)."""
+    """Width/height of a `width`×`height` video at `target`: a native factor, or a short side with both even (H.264)."""
+    if target in RELAYVSR_MODELS:
+        factor = RELAYVSR_MODELS[target]["factor"]
+        return width * factor, height * factor
     scale = UPSCALE_TARGETS[target] / min(width, height)
     return max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
 

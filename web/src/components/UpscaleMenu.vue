@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { PhArrowsOut } from '@phosphor-icons/vue'
-defineProps({ upscale: Object, targets: Array })
+defineProps({ upscalers: Array })
 const emit = defineEmits(['select'])
 const button = ref(null)
 const panel = ref(null)
@@ -47,9 +47,9 @@ onBeforeUnmount(close)
     <button ref="button" class="btn small" :aria-expanded="open" @click="toggle"><PhArrowsOut :size="14" />Upscale</button>
     <Teleport to="body">
       <div v-if="open" ref="panel" class="upscale-menu" role="group" aria-label="Upscale options" :style="position">
-        <div v-for="u in upscale.upscalers" :key="u.id" class="menu-row">
+        <div v-for="u in upscalers" :key="u.id" class="menu-row">
           <span class="menu-label">{{ u.label }}</span>
-          <button v-for="t in targets" :key="t" class="btn small" @click="pick(u.id, t)">{{ t }}</button>
+          <button v-for="t in u.targets" :key="t" class="btn small" @click="pick(u.id, t)">{{ t }}</button>
         </div>
       </div>
     </Teleport>

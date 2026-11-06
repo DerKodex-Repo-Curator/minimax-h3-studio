@@ -34,6 +34,9 @@ from model_catalog import (  # noqa: E402
     FLASHVSR_NODE,
     FLASHVSR_REPO,
     LORAS,
+    RELAYVSR_CHECKSUMS,
+    RELAYVSR_MODELS,
+    RELAYVSR_REPO,
     MOSS_CLIP,
     MOSS_REPO,
     MOSS_UNET,
@@ -67,6 +70,7 @@ GROUPS = (
     "music",
     "upscale",
     "flashvsr",
+    "relayvsr",
     "pixal3d",
     "klein",
     "qwen-image",
@@ -75,7 +79,7 @@ GROUPS = (
 GROUPS = (*GROUPS, *AUDIO_GROUPS)
 # Pinned hashes of the LoRAs that publish one (verified after download and on existing files).
 LORA_CHECKSUMS = {v["file"]: v["sha256"] for v in LORAS.values() if v.get("sha256")}
-CHECKSUMS = IMAGE_CHECKSUMS | AUDIO_CHECKSUMS | LORA_CHECKSUMS
+CHECKSUMS = IMAGE_CHECKSUMS | AUDIO_CHECKSUMS | LORA_CHECKSUMS | RELAYVSR_CHECKSUMS
 
 
 def manifest():
@@ -141,6 +145,11 @@ def manifest():
     items += [
         ("flashvsr", FLASHVSR_REPO, name, FLASHVSR_DIR, name) for name in FLASHVSR_FILES
     ]
+    for files in RELAYVSR_MODELS.values():
+        items += [
+            ("relayvsr", RELAYVSR_REPO, f"diffusion_models/{files['unet']}", "diffusion_models", files["unet"]),
+            ("relayvsr", RELAYVSR_REPO, f"vae/{files['vae']}", "vae", files["vae"]),
+        ]
     items += [
         ("pixal3d", repo, f"{sub}/{name}", sub, name) for repo, sub, name in PIXAL_FILES
     ]

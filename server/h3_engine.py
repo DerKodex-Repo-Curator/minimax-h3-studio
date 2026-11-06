@@ -18,7 +18,7 @@ from audio_catalog import native_id as audio_native_id
 from pipelines import audio_cpp, llm
 from llm_runtime import StrataServer
 from model_catalog import AUDIO_VAE, CLIP, DEFAULT_LORAS, LORAS, VIDEO_VAE, unet_file
-from pipelines import video, picture, music, seedvr2, flashvsr, pixal, media
+from pipelines import video, picture, music, seedvr2, flashvsr, relayvsr, pixal, media
 
 
 class H3Engine:
@@ -35,6 +35,7 @@ class H3Engine:
         self._music = None
         self._seedvr2 = None
         self._flashvsr = None
+        self._relayvsr = None
         self._pixal = None
         self._cancel = False
         self.audio_cpp = AudioCppPool(audio_settings.audio_root, audio_settings.data / "audio_cpp",
@@ -145,7 +146,7 @@ class H3Engine:
             self._flashvsr.release()
         self._models.clear()
         self.base = self.unet = self.family = None
-        self._moss = self._music = self._seedvr2 = self._flashvsr = self._pixal = None
+        self._moss = self._music = self._seedvr2 = self._flashvsr = self._relayvsr = self._pixal = None
         self._picture_model = self._picture_models = None
         self.mm.unload_all_models()
         gc.collect()
@@ -351,6 +352,20 @@ class H3Engine:
             source_path=source_path,
             width=width,
             height=height,
+            seed=seed,
+            video_path=video_path,
+            thumb_path=thumb_path,
+            on_progress=on_progress,
+        )
+
+    def relayvsr_video(
+        self, *, source_path, target, seed, video_path, thumb_path, on_progress
+    ):
+        self._prepare_task(("relayvsr", target))
+        return relayvsr.relayvsr_video(
+            self,
+            source_path=source_path,
+            target=target,
             seed=seed,
             video_path=video_path,
             thumb_path=thumb_path,

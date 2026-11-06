@@ -17,8 +17,10 @@ from model_catalog import (
     RESOLUTIONS,
     SAMPLERS,
     STEPS_RANGE,
+    RELAYVSR_MAX_SHORT_SIDE,
     UPSCALERS,
     UPSCALE_TARGETS,
+    upscale_targets,
     canvas_size,
     fixed_sampling,
     image_model_info,
@@ -50,6 +52,7 @@ async def health(request):
                     ("_pixal", "Pixal3D"),
                     ("_seedvr2", "SeedVR2"),
                     ("_flashvsr", "FlashVSR"),
+                    ("_relayvsr", "RelayVSR"),
                 )
                 if getattr(worker.engine, attr, None) is not None
             ],
@@ -119,8 +122,14 @@ async def presets(request):
             },
             "upscale": {
                 "targets": list(UPSCALE_TARGETS),
+                "relayvsr_max_short_side": RELAYVSR_MAX_SHORT_SIDE,
                 "upscalers": [
-                    {"id": k, "label": v["label"], "models": upscale_model_info(k)}
+                    {
+                        "id": k,
+                        "label": v["label"],
+                        "targets": upscale_targets(k),
+                        "models": upscale_model_info(k),
+                    }
                     for k, v in UPSCALERS.items()
                 ],
             },

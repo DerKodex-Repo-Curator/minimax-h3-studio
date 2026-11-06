@@ -5,7 +5,14 @@ from image_models import IMAGE_MODELS
 from audio_catalog import SPEECH_MODELS, ASR_MODELS
 import random
 import time
-from model_catalog import UPSCALERS, UPSCALE_TARGETS, upscale_size
+from model_catalog import (
+    RELAYVSR_MAX_SHORT_SIDE,
+    RELAYVSR_MODELS,
+    UPSCALERS,
+    UPSCALE_TARGETS,
+    upscale_size,
+    upscale_targets,
+)
 from server_settings import HISTORY_KINDS, MAX_SEED
 from job_views import job_view, queue_positions
 from .common import bad_request
@@ -51,15 +58,22 @@ async def upscale_job(request):
     if not source:
         raise web.HTTPNotFound()
     form = await request.post()
-    target = form.get("target") or "1080p"
-    if target not in UPSCALE_TARGETS:
-        return bad_request(f"target must be one of {', '.join(UPSCALE_TARGETS)}")
     upscaler = form.get("upscaler") or "seedvr2"
     if upscaler not in UPSCALERS:
         return bad_request(f"upscaler must be one of {', '.join(UPSCALERS)}")
+    targets = upscale_targets(upscaler)
+    target = form.get("target") or targets[0]
+    if target not in targets:
+        return bad_request(f"target must be one of {', '.join(targets)}")
     if source["status"] != "done" or not source["video"]:
         return bad_request("only finished videos can be upscaled")
-    if min(source["width"], source["height"]) >= UPSCALE_TARGETS[target]:
+    short_side = min(source["width"], source["height"])
+    if upscaler == "relayvsr":
+        if short_side * RELAYVSR_MODELS[target]["factor"] > RELAYVSR_MAX_SHORT_SIDE:
+            return bad_request(
+                f"{target} would exceed the {RELAYVSR_MAX_SHORT_SIDE} px short side limit"
+            )
+    elif short_side >= UPSCALE_TARGETS[target]:
         return bad_request(f"the video is already {target} or larger")
     width, height = upscale_size(source["width"], source["height"], target)
     raw_seed = (form.get("seed") or "").strip()

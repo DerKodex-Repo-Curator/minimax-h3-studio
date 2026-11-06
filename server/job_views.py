@@ -47,7 +47,7 @@ def job_view(job, positions):
     elif job["mode"] == "t2m":
         view["models"] = stored or music_model_info()
     elif job["mode"] == "upscale":
-        view["models"] = stored or upscale_model_info(job["upscaler"] or "seedvr2")
+        view["models"] = stored or upscale_model_info(job["upscaler"] or "seedvr2", job["preset"])
     else:
         view["models"] = stored or (
             model_info(job["lora"], job_strength(job), job["sampler"], job["steps"])

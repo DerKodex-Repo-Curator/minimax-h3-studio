@@ -23,6 +23,10 @@ const MUSIC_SPANS = { loading: [0, 0], composing: [0, 0.72], sampling: [0.72, 0.
 const UPSCALE_SPANS = { loading: [0, 0], reading: [0, 0.25], upscaling: [0.25, 0.32], decoding: [0.32, 0.97], saving: [0.97, 1] }
 // FlashVSR streams the clip, decoding and encoding as it goes, so its chunks cover the whole run.
 const FLASHVSR_SPANS = { loading: [0, 0.03], upscaling: [0.03, 0.98], saving: [0.98, 1] }
+// RelayVSR: one step on every 15th frame, then the Flash decoder writes every frame.
+// Encoding the large output takes about half of the run and reports no progress of its own.
+const RELAYVSR_SPANS = { loading: [0, 0], reading: [0, 0.03], upscaling: [0.03, 0.17], decoding: [0.17, 0.46], saving: [0.46, 1] }
+const UPSCALER_SPANS = { flashvsr: FLASHVSR_SPANS, relayvsr: RELAYVSR_SPANS }
 const is3D = computed(() => props.job.mode === 'i23d')
 const MESH_STAGES = { preprocessing: 'Preparing the object', structure: 'Generating structure', shape: 'Generating shape', shape_detail: 'Refining geometry', texture: 'Generating materials', meshing: 'Baking textures' }
 const MESH_SPANS = { loading: [0, 0], preprocessing: [0, .08], structure: [.08, .18], shape: [.18, .35], shape_detail: [.35, .62], texture: [.62, .85], meshing: [.85, .99], saving: [.99, 1] }
@@ -34,7 +38,7 @@ const isMusic = computed(() => props.job.mode === 't2m')
 const isUpscale = computed(() => props.job.mode === 'upscale')
 const overall = computed(() => {
   const spans = is3D.value ? MESH_SPANS : isPicture.value ? PICTURE_SPANS : isMusic.value ? MUSIC_SPANS
-    : isUpscale.value ? (props.job.upscaler === 'flashvsr' ? FLASHVSR_SPANS : UPSCALE_SPANS) : SPANS
+    : isUpscale.value ? (UPSCALER_SPANS[props.job.upscaler] || UPSCALE_SPANS) : SPANS
   const span = spans[props.job.stage]
   return span ? span[0] + (span[1] - span[0]) * (props.job.progress || 0) : 0
 })
@@ -54,10 +58,16 @@ const clipLength = computed(() => {
   }
   return `${frames.value ? (frames.value / 24).toFixed(1) : +(props.job.duration || 0).toFixed(1)}s`
 })
-// Targets above the video's short side ('1080p' -> 1080); picking an upscaler and a target queues the job.
-const targets = computed(() => props.job.video_url
-  ? (props.upscale?.targets || []).filter((t) => parseInt(t) > Math.min(props.job.width, props.job.height))
-  : [])
+// Per upscaler: short sides above the video's ('1080p' -> 1080) or factors within the limit ('2x' -> 2);
+// picking an upscaler and a target queues the job.
+const upscalers = computed(() => {
+  if (!props.job.video_url) return []
+  const short = Math.min(props.job.width, props.job.height)
+  const fits = (t) => t.endsWith('x') ? parseInt(t) * short <= props.upscale.relayvsr_max_short_side : parseInt(t) > short
+  return (props.upscale?.upscalers || [])
+    .map((u) => ({ ...u, targets: (u.targets || props.upscale.targets).filter(fits) }))
+    .filter((u) => u.targets.length)
+})
 const created = computed(() => new Date(props.job.created_at * 1000).toLocaleString('en-US', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
 }))
@@ -179,7 +189,7 @@ onBeforeUnmount(() => observer?.disconnect())
               <button class="btn small" title="Use as a reference image" @click="emit('use-ref', job)"><PhUserFocus :size="14" />Reference</button>
               <button class="btn small" title="Use as the first frame" @click="emit('use-frame', job)"><PhFilmStrip :size="14" />Frame</button>
             </template>
-            <UpscaleMenu v-if="targets.length" :upscale="upscale" :targets="targets" @select="(upscaler, target) => emit('upscale', job, upscaler, target)" />
+            <UpscaleMenu v-if="upscalers.length" :upscalers="upscalers" @select="(upscaler, target) => emit('upscale', job, upscaler, target)" />
             <button v-if="!isUpscale" class="btn small" @click="emit('reuse', job)"><PhArrowCounterClockwise :size="14" />Reuse</button>
             <button class="btn icon small danger" aria-label="Delete" @click="emit('remove', job)"><PhTrash :size="14" /></button>
           </template>

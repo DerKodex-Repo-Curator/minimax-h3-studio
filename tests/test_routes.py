@@ -31,3 +31,25 @@ class RoutesTests(APIAppTestCase):
         upscale = await response.json()
         self.assertEqual(upscale["source"], source["id"])
         self.assertEqual(upscale["upscaler"], "flashvsr")
+        response = await self.client.post(
+            f"/api/jobs/{source['id']}/upscale",
+            data={"upscaler": "relayvsr", "target": "4x"},
+        )
+        self.assertEqual(response.status, 201, await response.text())
+        upscale = await response.json()
+        self.assertEqual((upscale["width"], upscale["height"]), (3840, 2176))
+        self.assertEqual(upscale["models"]["unet"], "relayvsr_x4_int8_convrot.safetensors")
+        response = await self.client.post(
+            f"/api/jobs/{source['id']}/upscale",
+            data={"upscaler": "relayvsr", "target": "1080p"},
+        )
+        self.assertEqual(response.status, 400)
+        large = self.store.create(
+            mode="t2v", prompt="large", video="large.mp4", width=1344, height=768
+        )
+        self.store.update(large["id"], status="done")
+        response = await self.client.post(
+            f"/api/jobs/{large['id']}/upscale",
+            data={"upscaler": "relayvsr", "target": "4x"},
+        )
+        self.assertEqual(response.status, 400)
